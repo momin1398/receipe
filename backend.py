@@ -40,7 +40,6 @@ CREATE TABLE IF NOT EXISTS recipes (
 """)
 conn.commit()
 
-
 # -------------------------
 # User Functions
 # -------------------------
@@ -53,7 +52,6 @@ def create_superuser():
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """, ("admin", hashed_pw, "Super Admin", "admin@example.com", "0000000000", "superuser", 1))
         conn.commit()
-
 
 def register_user(username, password, name, email, phone):
     cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
@@ -68,11 +66,15 @@ def register_user(username, password, name, email, phone):
     conn.commit()
     return True
 
-
 def login_user(username, password):
     cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
     user = cursor.fetchone()
-    if not user or user[6] == 0:  # approved column
+    if not user:
+        return None
+
+    # Convert approved to int safely
+    approved = int(user[6]) if user[6] is not None else 0
+    if approved == 0:
         return None
 
     if not bcrypt.checkpw(password.encode(), user[1].encode()):
@@ -85,7 +87,6 @@ def login_user(username, password):
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-
 def get_user(username):
     cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
     user = cursor.fetchone()
@@ -96,10 +97,9 @@ def get_user(username):
             "email": user[3],
             "phone": user[4],
             "role": user[5],
-            "approved": user[6]
+            "approved": int(user[6]) if user[6] is not None else 0
         }
     return None
-
 
 def get_all_users():
     cursor.execute("SELECT * FROM users")
@@ -111,15 +111,13 @@ def get_all_users():
             "email": u[3],
             "phone": u[4],
             "role": u[5],
-            "approved": u[6]
+            "approved": int(u[6]) if u[6] is not None else 0
         } for u in users
     ]
-
 
 def approve_user(username):
     cursor.execute("UPDATE users SET approved = 1 WHERE username = ?", (username,))
     conn.commit()
-
 
 def delete_user(username):
     if username == "admin":
@@ -128,7 +126,6 @@ def delete_user(username):
     conn.commit()
     return True
 
-
 def change_password(username, new_password):
     if username == "admin":
         return False
@@ -136,7 +133,6 @@ def change_password(username, new_password):
     cursor.execute("UPDATE users SET password = ? WHERE username = ?", (hashed_pw, username))
     conn.commit()
     return True
-
 
 # -------------------------
 # Recipe Functions
@@ -148,17 +144,14 @@ def add_recipe(username, title, content):
     """, (username, title, content))
     conn.commit()
 
-
 def get_recipes(username):
     cursor.execute("SELECT * FROM recipes WHERE username = ?", (username,))
     recipes = cursor.fetchall()
     return [{"id": r[0], "username": r[1], "title": r[2], "content": r[3]} for r in recipes]
 
-
 def delete_recipe(username, title):
     cursor.execute("DELETE FROM recipes WHERE username = ? AND title = ?", (username, title))
     conn.commit()
-
 
 def update_recipe(username, old_title, new_title, new_content):
     cursor.execute("""
@@ -167,7 +160,6 @@ def update_recipe(username, old_title, new_title, new_content):
     WHERE username = ? AND title = ?
     """, (new_title, new_content, username, old_title))
     conn.commit()
-
 
 # Ensure superuser exists
 create_superuser()
