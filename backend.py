@@ -46,7 +46,7 @@ conn.commit()
 def create_superuser():
     cursor.execute("SELECT * FROM users WHERE username = ?", ("admin",))
     if not cursor.fetchone():
-        hashed_pw = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt()).decode()
+        hashed_pw = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt())  # store bytes
         cursor.execute("""
         INSERT INTO users (username, password, name, email, phone, role, approved)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -58,7 +58,7 @@ def register_user(username, password, name, email, phone):
     if cursor.fetchone():
         return False
 
-    hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt())  # store bytes
     cursor.execute("""
     INSERT INTO users (username, password, name, email, phone, role, approved)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -69,15 +69,14 @@ def register_user(username, password, name, email, phone):
 def login_user(username, password):
     cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
     user = cursor.fetchone()
-    if not user:
+    if not user or user[6] == 0:  # approved column
         return None
 
-    # Convert approved to int safely
-    approved = int(user[6]) if user[6] is not None else 0
-    if approved == 0:
-        return None
+    stored_hash = user[1]  # already bytes
+    if isinstance(stored_hash, str):  # SQLite might return str
+        stored_hash = stored_hash.encode('utf-8')
 
-    if not bcrypt.checkpw(password.encode(), user[1].encode()):
+    if not bcrypt.checkpw(password.encode(), stored_hash):
         return None
 
     payload = {
@@ -97,7 +96,7 @@ def get_user(username):
             "email": user[3],
             "phone": user[4],
             "role": user[5],
-            "approved": int(user[6]) if user[6] is not None else 0
+            "approved": user[6]
         }
     return None
 
@@ -111,7 +110,7 @@ def get_all_users():
             "email": u[3],
             "phone": u[4],
             "role": u[5],
-            "approved": int(u[6]) if u[6] is not None else 0
+            "approved": u[6]
         } for u in users
     ]
 
@@ -129,7 +128,7 @@ def delete_user(username):
 def change_password(username, new_password):
     if username == "admin":
         return False
-    hashed_pw = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
+    hashed_pw = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt())  # store bytes
     cursor.execute("UPDATE users SET password = ? WHERE username = ?", (hashed_pw, username))
     conn.commit()
     return True
