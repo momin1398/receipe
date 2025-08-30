@@ -2,7 +2,8 @@ from nicegui import ui, app
 import backend
 import jwt
 import asyncio
-
+from fractions import Fraction
+import re
 # -------------------------
 # JWT helpers
 # -------------------------
@@ -122,6 +123,8 @@ async def main_page():
     with ui.row().classes("mx-auto mt-6"):
         ui.button("Show Recipes", on_click=lambda: ui.navigate.to("/show_recipes")).classes("bg-blue-500 text-white")
         ui.button("Add Recipe", on_click=lambda: ui.navigate.to("/add_recipe")).classes("bg-green-500 text-white")
+        ui.button("Estimation ", on_click=lambda: ui.navigate.to("/calculate")).classes("bg-yellow-500 text-white")
+
 
         async def logout():
             await clear_jwt()
@@ -255,6 +258,77 @@ async def superuser_page():
 
         ui.button("Logout", on_click=logout).classes("bg-red-500 text-white")
 
+
+# -------------------------
+# Utility to parse quantities
+# -------------------------
+def parse_quantity(q):
+    q = str(q).strip()
+    try:
+        return float(Fraction(q))
+    except Exception:
+        return None
+
+def scale_ingredients(text, base_weight, target_weight):
+    scaled = []
+    lines = text.strip().splitlines()
+    factor = target_weight / base_weight
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # split last word as unit
+        parts = line.rsplit(' ', 2)
+        if len(parts) == 3:
+            name, qty, unit = parts
+        elif len(parts) == 2:
+            name, qty = parts
+            unit = ''
+        else:
+            continue
+
+        qty_num = parse_quantity(qty)
+        if qty_num is None:
+            continue
+        scaled_qty = qty_num * factor
+        scaled.append(f"{name} {scaled_qty:.2f} {unit}".strip())
+    return '\n'.join(scaled)
+
+# -------------------------
+# UI Page
+# -------------------------
+@ui.page("/calculate")
+def calculate_page():
+    with ui.card().classes("w-96 mx-auto mt-20 p-6 shadow-lg"):
+        ui.label("Ingredient Calculator").classes("text-2xl font-bold mb-4")
+
+        ingredients_input = ui.textarea(
+            "Enter ingredients, one per line (e.g., Flour 500 g)"
+        ).classes("w-full mb-2")
+
+        base_weight_input = ui.input("Base Weight (kg)").props('type="number"').classes("w-full mb-2")
+        target_weight_input = ui.input("Target Weight (kg)").props('type="number"').classes("w-full mb-2")
+
+        # Make textarea readonly in older NiceGUI
+        result_area = ui.textarea("Scaled Ingredients").classes("w-full")
+        result_area._props["readonly"] = True  # set readonly dynamically
+
+        def calculate():
+            try:
+                base_weight = float(base_weight_input.value)
+                target_weight = float(target_weight_input.value)
+            except (TypeError, ValueError):
+                ui.notify("Please enter valid weights", color="red")
+                return
+
+            result = scale_ingredients(
+                ingredients_input.value, base_weight, target_weight
+            )
+            result_area.value = result
+            ui.notify("Ingredients scaled!", color="green")
+
+        ui.button("Calculate", on_click=calculate).classes("w-full mt-2 bg-blue-500 text-white")
+        ui.button("Back to Dashboard", on_click=lambda: ui.navigate.to("/")).classes("w-full mt-2 bg-gray-500 text-white")
 
 # -------------------------
 # Run app
