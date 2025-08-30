@@ -70,10 +70,16 @@ def register_user(username, password, name, email, phone):
 def login_user(username, password):
     cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
     user = cursor.fetchone()
-    if not user or user[6] == 0:  # not approved
+    if not user:
         return None
+
+    approved = int(user[6])  # force integer
+    if approved != 1:
+        return None
+
     if not bcrypt.checkpw(password.encode(), user[1].encode()):
         return None
+
     payload = {
         "username": username,
         "role": user[5],
