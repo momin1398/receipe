@@ -41,7 +41,6 @@ if cursor:
         username TEXT,
         title TEXT,
         content TEXT,
-        type TEXT,
         FOREIGN KEY(username) REFERENCES users(username)
     )
     """)
@@ -132,7 +131,7 @@ def change_password(username, new_password):
     return True
 
 # ------------------------- Recipe Functions -------------------------
-def add_recipe(username, title, content, type="manual"):
+def add_recipe(username, title, content):
     """Add a recipe for a user. Returns True if success, False otherwise."""
     if not cursor:
         print("DB cursor not available")
@@ -147,8 +146,8 @@ def add_recipe(username, title, content, type="manual"):
 
     try:
         cursor.execute(
-            "INSERT INTO recipes (username,title,content,type) VALUES (%s,%s,%s,%s)",
-            (username, title, content, type)
+            "INSERT INTO recipes (username,title,content) VALUES (%s,%s,%s,%s)",
+            (username, title, content)
         )
         conn.commit()
         print(f"Recipe '{title}' added successfully for {username}")
@@ -167,12 +166,12 @@ def get_recipes(username):
 
     try:
         cursor.execute(
-            "SELECT id,username,title,content,type FROM recipes WHERE username=%s",
+            "SELECT id,username,title,content FROM recipes WHERE username=%s",
             (username,)
         )
         rows = cursor.fetchall()
         recipes = [
-            {"id": r[0], "username": r[1], "title": r[2], "content": r[3], "type": r[4]}
+            {"id": r[0], "username": r[1], "title": r[2], "content": r[3]}
             for r in rows
         ]
         print(f"Fetched {len(recipes)} recipes for {username}")

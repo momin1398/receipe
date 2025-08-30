@@ -174,14 +174,12 @@ async def show_recipes_page():
             with ui.row().classes("font-bold border-b pb-2 mb-2"):
                 ui.label("Title").style("flex: 2")
                 ui.label("Content").style("flex: 4")
-                ui.label("Type").style("flex: 1")
                 ui.label("Actions").style("flex: 2")
 
             for r in recipes:
                 with ui.row().classes("mb-2 items-center"):
                     ui.label(r["title"]).style("flex: 2; word-break: break-word")
                     ui.label(r["content"]).style("flex: 4; word-break: break-word; white-space: pre-wrap")
-                    ui.label(r["type"]).style("flex: 1")
 
                     with ui.row().style("flex: 2"):
                         ui.button("Edit", on_click=lambda r=r: ui.navigate.to(f"/edit_recipe/{r['title']}")).classes("bg-blue-500 text-white mr-2")
