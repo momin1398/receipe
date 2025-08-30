@@ -1,4 +1,4 @@
 nicegui
 bcrypt
 pyjwt
-psycopg2
+psycopg2-binary
