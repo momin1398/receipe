@@ -24,72 +24,85 @@ except Exception as e:
 
 # ------------------------- Tables Setup -------------------------
 if cursor:
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        username TEXT PRIMARY KEY,
-        password TEXT NOT NULL,
-        name TEXT,
-        email TEXT,
-        phone TEXT,
-        role TEXT,
-        approved INTEGER
-    )
-    """)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS recipes (
-        id SERIAL PRIMARY KEY,
-        username TEXT,
-        title TEXT,
-        content TEXT,
-        type TEXT,
-        FOREIGN KEY(username) REFERENCES users(username)
-    )
-    """)
-    conn.commit()
+    try:
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            password TEXT NOT NULL,
+            name TEXT,
+            email TEXT,
+            phone TEXT,
+            role TEXT,
+            approved INTEGER
+        )
+        """)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS recipes (
+            id SERIAL PRIMARY KEY,
+            username TEXT,
+            title TEXT,
+            content TEXT,
+            type TEXT,
+            FOREIGN KEY(username) REFERENCES users(username)
+        )
+        """)
+        conn.commit()
+    except Exception as e:
+        print("Error creating tables:", e)
+        conn.rollback()
 
-# ------------------------- Transaction-safe Helpers -------------------------
-def safe_execute(query, params=None):
-    """Executes a query safely with rollback on failure."""
-    if not cursor:
-        return None
+# ------------------------- Transaction-safe helpers -------------------------
+def execute_commit(query, params=None):
+    """For INSERT, UPDATE, DELETE queries."""
+    if not cursor: return False
     try:
         cursor.execute(query, params or ())
         conn.commit()
-        return cursor
+        return True
     except Exception as e:
         print("DB Error:", e)
         conn.rollback()
-        return None
+        return False
+
+def execute_fetch(query, params=None):
+    """For SELECT queries."""
+    if not cursor: return []
+    try:
+        cursor.execute(query, params or ())
+        return cursor.fetchall()
+    except Exception as e:
+        print("DB Error:", e)
+        conn.rollback()
+        return []
 
 # ------------------------- User Functions -------------------------
 def create_superuser():
     if not cursor: return
-    cur = safe_execute("SELECT * FROM users WHERE username=%s", ("admin",))
-    if cur and not cur.fetchone():
+    rows = execute_fetch("SELECT * FROM users WHERE username=%s", ("admin",))
+    if not rows:
         hashed_pw = bcrypt.hashpw(SUPERUSER_PASSWORD.encode(), bcrypt.gensalt()).decode()
-        safe_execute(
+        execute_commit(
             "INSERT INTO users (username,password,name,email,phone,role,approved) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             ("admin", hashed_pw, "Super Admin", "admin@example.com", "0000000000", "superuser", 1)
         )
 
 def register_user(username, password, name, email, phone):
     if not cursor: return False
-    cur = safe_execute("SELECT * FROM users WHERE username=%s", (username,))
-    if cur and cur.fetchone(): return False
+    if execute_fetch("SELECT * FROM users WHERE username=%s", (username,)):
+        return False
     hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    safe_execute(
+    return execute_commit(
         "INSERT INTO users (username,password,name,email,phone,role,approved) VALUES (%s,%s,%s,%s,%s,%s,%s)",
         (username, hashed_pw, name, email, phone, "user", 0)
     )
-    return True
 
 def login_user(username, password):
-    if not cursor: return None
-    cur = safe_execute("SELECT * FROM users WHERE username=%s", (username,))
-    user = cur.fetchone() if cur else None
-    if not user: return None
-    if int(user[6]) != 1: return None
-    if not bcrypt.checkpw(password.encode(), user[1].encode()): return None
+    rows = execute_fetch("SELECT * FROM users WHERE username=%s", (username,))
+    user = rows[0] if rows else None
+    if not user or int(user[6]) != 1: 
+        return None
+    if not bcrypt.checkpw(password.encode(), user[1].encode()): 
+        return None
     payload = {
         "username": username,
         "role": user[5],
@@ -98,9 +111,8 @@ def login_user(username, password):
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 def get_user(username):
-    if not cursor: return None
-    cur = safe_execute("SELECT * FROM users WHERE username=%s", (username,))
-    user = cur.fetchone() if cur else None
+    rows = execute_fetch("SELECT * FROM users WHERE username=%s", (username,))
+    user = rows[0] if rows else None
     if not user: return None
     return {
         "username": user[0],
@@ -112,41 +124,35 @@ def get_user(username):
     }
 
 def get_all_users():
-    if not cursor: return []
-    cur = safe_execute("SELECT * FROM users")
-    users = cur.fetchall() if cur else []
-    return [{"username": u[0], "name": u[2], "email": u[3], "phone": u[4], "role": u[5], "approved": u[6]} for u in users]
+    rows = execute_fetch("SELECT * FROM users")
+    return [{"username": u[0], "name": u[2], "email": u[3], "phone": u[4], "role": u[5], "approved": u[6]} for u in rows]
 
 def approve_user(username):
-    safe_execute("UPDATE users SET approved=1 WHERE username=%s", (username,))
+    execute_commit("UPDATE users SET approved=1 WHERE username=%s", (username,))
 
 def delete_user(username):
-    if not cursor or username=="admin": return False
-    safe_execute("DELETE FROM users WHERE username=%s", (username,))
-    return True
+    if username == "admin": return False
+    return execute_commit("DELETE FROM users WHERE username=%s", (username,))
 
 def change_password(username, new_password):
-    if not cursor: return False
     hashed_pw = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
-    safe_execute("UPDATE users SET password=%s WHERE username=%s", (hashed_pw, username))
-    return True
+    return execute_commit("UPDATE users SET password=%s WHERE username=%s", (hashed_pw, username))
 
 # ------------------------- Recipe Functions -------------------------
 def add_recipe(username, title, content, type="manual"):
-    safe_execute("INSERT INTO recipes (username,title,content,type) VALUES (%s,%s,%s,%s)",
+    return execute_commit("INSERT INTO recipes (username,title,content,type) VALUES (%s,%s,%s,%s)",
                  (username,title,content,type))
 
 def get_recipes(username):
-    if not cursor: return []
-    cur = safe_execute("SELECT id,username,title,content,type FROM recipes WHERE username=%s", (username,))
-    return [{"id": r[0],"username":r[1],"title":r[2],"content":r[3],"type":r[4]} for r in cur.fetchall()] if cur else []
+    rows = execute_fetch("SELECT id,username,title,content,type FROM recipes WHERE username=%s", (username,))
+    return [{"id": r[0],"username":r[1],"title":r[2],"content":r[3],"type":r[4]} for r in rows]
 
 def delete_recipe(username,title):
-    safe_execute("DELETE FROM recipes WHERE username=%s AND title=%s", (username,title))
+    return execute_commit("DELETE FROM recipes WHERE username=%s AND title=%s", (username,title))
 
 def update_recipe(username, old_title, new_title, new_content):
-    safe_execute("UPDATE recipes SET title=%s, content=%s WHERE username=%s AND title=%s",
+    return execute_commit("UPDATE recipes SET title=%s, content=%s WHERE username=%s AND title=%s",
                  (new_title,new_content,username,old_title))
 
-# Ensure superuser exists
+# ------------------------- Ensure superuser exists -------------------------
 create_superuser()
