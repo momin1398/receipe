@@ -1,4 +1,4 @@
 nicegui
-pyjwt
 bcrypt
-tinydb
+pyjwt
+sqlite3  # standard lib, no need to install

@@ -1,7 +1,7 @@
 from nicegui import ui, app
 import backend
 import jwt
-import asyncio  # Needed for async tasks
+import asyncio
 
 # -------------------------
 # JWT helpers
@@ -35,7 +35,6 @@ async def require_login() -> dict:
         ui.navigate.to("/login")
         return None
     return payload
-
 
 # -------------------------
 # Pages
@@ -152,14 +151,16 @@ async def show_recipes_page():
                     backend.delete_recipe(username, r["title"])
                     ui.notify("Recipe deleted!", color="red")
                     ui.navigate.to("/show_recipes")
+
                 with ui.row():
                     ui.button("Edit", on_click=lambda r=r: ui.navigate.to(f"/edit_recipe/{r['title']}")).classes("bg-blue-500 text-white mr-2")
                     ui.button("Delete", on_click=lambda r=r: delete_recipe(r)).classes("bg-red-500 text-white")
     
     async def home():
-            ui.navigate.to("/")
+        ui.navigate.to("/")
 
-    ui.button("dashboard", on_click=home).classes("bg-red-500 text-white")
+    ui.button("Dashboard", on_click=home).classes("bg-red-500 text-white")
+
 
 @ui.page("/edit_recipe/{title}")
 async def edit_recipe(title: str):
@@ -174,7 +175,7 @@ async def edit_recipe(title: str):
 
     with ui.card().classes("w-96 mx-auto mt-20 p-6 shadow-lg"):
         new_title = ui.input("Title", value=recipe["title"]).classes("w-full")
-        new_content = ui.input("Content", value=recipe["content"]).classes("w-full")
+        new_content = ui.textarea("Content", value=recipe["content"]).classes("w-full")
 
         def update():
             backend.update_recipe(username, title, new_title.value, new_content.value)
@@ -231,8 +232,6 @@ async def superuser_page():
 
                 if u["username"] != "admin":
                     with ui.row():
-
-                        # Change password with input popup
                         def change_password_popup(uname=u["username"]):
                             with ui.dialog() as dialog, ui.card():
                                 ui.label(f"Set new password for {uname}").classes("mb-2")
@@ -244,15 +243,14 @@ async def superuser_page():
                                 ui.button("SET PASSWORD", on_click=set_password).classes("mt-2 bg-yellow-500 text-white")
                                 ui.button("CANCEL", on_click=lambda: dialog.close()).classes("mt-2 bg-gray-500 text-white")
                             dialog.open()
-                        
                         ui.button("Change Password", on_click=change_password_popup).classes("bg-yellow-500 text-white")
 
                         async def delete_user_action(uname=u["username"]):
                             backend.delete_user(uname)
                             ui.notify(f"User {uname} deleted", color="red")
                             ui.navigate.to("/superuser")
-
                         ui.button("Delete", on_click=delete_user_action).classes("bg-red-500 text-white")
+
         async def logout():
             await clear_jwt()
             ui.navigate.to("/login")
@@ -262,29 +260,4 @@ async def superuser_page():
 # -------------------------
 # Run app
 # -------------------------
-ui.run(title="Recipe Manager (JWT)", port=8080, reload=False, storage_secret="super_secret_session_key_123")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+ui.run(title="Recipe Manager (SQLite + JWT)", port=8080, reload=False, storage_secret="super_secret_session_key_123")

@@ -1,106 +1,140 @@
-import jwt
+import sqlite3
 import bcrypt
+import jwt
 from datetime import datetime, timedelta
-from tinydb import TinyDB, Query
 
 # -------------------------
 # DB Setup
 # -------------------------
-db = TinyDB("db.json")
-users_table = db.table("users")
-recipes_table = db.table("recipes")
-
+DB_FILE = "app.db"
 JWT_SECRET = "super_secret_jwt_key_123"
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_MINUTES = 60
+
+# Connect to DB and create tables if not exist
+conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+cursor = conn.cursor()
+
+# Users table
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    username TEXT PRIMARY KEY,
+    password TEXT NOT NULL,
+    name TEXT,
+    email TEXT,
+    phone TEXT,
+    role TEXT,
+    approved INTEGER
+)
+""")
+
+# Recipes table
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS recipes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT,
+    title TEXT,
+    content TEXT,
+    FOREIGN KEY(username) REFERENCES users(username)
+)
+""")
+conn.commit()
 
 
 # -------------------------
 # User Functions
 # -------------------------
 def create_superuser():
-    """Ensure a superuser exists"""
-    User = Query()
-    if not users_table.get(User.username == "admin"):
+    cursor.execute("SELECT * FROM users WHERE username = ?", ("admin",))
+    if not cursor.fetchone():
         hashed_pw = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt()).decode()
-        users_table.insert({
-            "username": "admin",
-            "password": hashed_pw,
-            "name": "Super Admin",
-            "email": "admin@example.com",
-            "phone": "0000000000",
-            "role": "superuser",
-            "approved": True,
-        })
+        cursor.execute("""
+        INSERT INTO users (username, password, name, email, phone, role, approved)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, ("admin", hashed_pw, "Super Admin", "admin@example.com", "0000000000", "superuser", 1))
+        conn.commit()
 
 
 def register_user(username, password, name, email, phone):
-    """Register a new user (needs approval by superuser)"""
-    User = Query()
-    if users_table.get(User.username == username):
+    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+    if cursor.fetchone():
         return False
 
     hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    users_table.insert({
-        "username": username,
-        "password": hashed_pw,
-        "name": name,
-        "email": email,
-        "phone": phone,
-        "role": "user",
-        "approved": False,  # superuser must approve
-    })
+    cursor.execute("""
+    INSERT INTO users (username, password, name, email, phone, role, approved)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (username, hashed_pw, name, email, phone, "user", 0))
+    conn.commit()
     return True
 
 
 def login_user(username, password):
-    """Login user and return JWT"""
-    User = Query()
-    user = users_table.get(User.username == username)
-    if not user or not user.get("approved"):
+    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+    user = cursor.fetchone()
+    if not user or user[6] == 0:  # approved column
         return None
 
-    if not bcrypt.checkpw(password.encode(), user["password"].encode()):
+    if not bcrypt.checkpw(password.encode(), user[1].encode()):
         return None
 
     payload = {
         "username": username,
-        "role": user["role"],
+        "role": user[5],
         "exp": datetime.utcnow() + timedelta(minutes=JWT_EXPIRATION_MINUTES),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
 def get_user(username):
-    User = Query()
-    return users_table.get(User.username == username)
+    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+    user = cursor.fetchone()
+    if user:
+        return {
+            "username": user[0],
+            "name": user[2],
+            "email": user[3],
+            "phone": user[4],
+            "role": user[5],
+            "approved": user[6]
+        }
+    return None
 
 
 def get_all_users():
-    return users_table.all()
+    cursor.execute("SELECT * FROM users")
+    users = cursor.fetchall()
+    return [
+        {
+            "username": u[0],
+            "name": u[2],
+            "email": u[3],
+            "phone": u[4],
+            "role": u[5],
+            "approved": u[6]
+        } for u in users
+    ]
 
 
 def approve_user(username):
-    User = Query()
-    users_table.update({"approved": True}, User.username == username)
+    cursor.execute("UPDATE users SET approved = 1 WHERE username = ?", (username,))
+    conn.commit()
 
 
 def delete_user(username):
-    """Delete user but not superuser"""
     if username == "admin":
         return False
-    User = Query()
-    users_table.remove(User.username == username)
+    cursor.execute("DELETE FROM users WHERE username = ?", (username,))
+    conn.commit()
     return True
 
 
 def change_password(username, new_password):
-    """Change password, superuser password cannot be changed"""
     if username == "admin":
         return False
-    User = Query()
     hashed_pw = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
-    users_table.update({"password": hashed_pw}, User.username == username)
+    cursor.execute("UPDATE users SET password = ? WHERE username = ?", (hashed_pw, username))
+    conn.commit()
     return True
 
 
@@ -108,25 +142,31 @@ def change_password(username, new_password):
 # Recipe Functions
 # -------------------------
 def add_recipe(username, title, content):
-    recipes_table.insert({"username": username, "title": title, "content": content})
+    cursor.execute("""
+    INSERT INTO recipes (username, title, content)
+    VALUES (?, ?, ?)
+    """, (username, title, content))
+    conn.commit()
 
 
 def get_recipes(username):
-    Recipe = Query()
-    return recipes_table.search(Recipe.username == username)
+    cursor.execute("SELECT * FROM recipes WHERE username = ?", (username,))
+    recipes = cursor.fetchall()
+    return [{"id": r[0], "username": r[1], "title": r[2], "content": r[3]} for r in recipes]
 
 
 def delete_recipe(username, title):
-    Recipe = Query()
-    recipes_table.remove((Recipe.username == username) & (Recipe.title == title))
+    cursor.execute("DELETE FROM recipes WHERE username = ? AND title = ?", (username, title))
+    conn.commit()
 
 
 def update_recipe(username, old_title, new_title, new_content):
-    Recipe = Query()
-    recipes_table.update(
-        {"title": new_title, "content": new_content},
-        (Recipe.username == username) & (Recipe.title == old_title),
-    )
+    cursor.execute("""
+    UPDATE recipes
+    SET title = ?, content = ?
+    WHERE username = ? AND title = ?
+    """, (new_title, new_content, username, old_title))
+    conn.commit()
 
 
 # Ensure superuser exists
