@@ -318,7 +318,7 @@ def calculate_page():
                 base_weight = float(base_weight_input.value)
                 target_weight = float(target_weight_input.value)
             except (TypeError, ValueError):
-                ui.notify("Please enter valid weights", color="red")
+                ui.notify("Please enter valid weights ", color="red")
                 return
 
             result = scale_ingredients(
