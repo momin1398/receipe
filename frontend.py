@@ -36,9 +36,8 @@ async def require_login() -> dict:
         return None
     return payload
 
-
 # -------------------------
-# Login Page
+# Pages
 # -------------------------
 @ui.page("/login")
 def login_page():
@@ -61,9 +60,6 @@ def login_page():
         ui.button("Change Password", on_click=lambda: ui.navigate.to("/reset_password")).classes("w-full mt-2 bg-yellow-500 text-white")
 
 
-# -------------------------
-# Reset Password Page
-# -------------------------
 @ui.page("/reset_password")
 def reset_password_page():
     with ui.card().classes("w-96 mx-auto mt-20 p-6 shadow-lg"):
@@ -86,9 +82,6 @@ def reset_password_page():
         ui.button("BACK TO LOGIN", on_click=lambda: ui.navigate.to("/login")).classes("w-full mt-2 bg-gray-500 text-white")
 
 
-# -------------------------
-# Register Page
-# -------------------------
 @ui.page("/register")
 def register_page():
     with ui.card().classes("w-96 mx-auto mt-20 p-6 shadow-lg"):
@@ -104,7 +97,6 @@ def register_page():
             if not (full_name.value and email.value and phone.value and username.value and password.value):
                 ui.notify("All fields are required", color="red")
                 return
-
             if backend.register_user(username.value, password.value, full_name.value, email.value, phone.value):
                 ui.notify("Registration submitted. Waiting for approval.", color="green")
                 ui.navigate.to("/login")
@@ -115,17 +107,14 @@ def register_page():
         ui.button("BACK TO LOGIN", on_click=lambda: ui.navigate.to("/login")).classes("w-full mt-2 bg-gray-500 text-white")
 
 
-# -------------------------
-# Main Dashboard Page
-# -------------------------
 @ui.page("/")
 async def main_page():
     payload = await require_login()
     if not payload:
         return
     username = payload["username"]
-
     user_info = backend.get_user(username)
+
     with ui.card().classes("w-full max-w-2xl mx-auto mt-10 p-6 shadow-lg"):
         ui.label(f"👋 Welcome, {user_info['name']}!").classes("text-2xl font-bold mb-2")
         ui.label(f"📧 {user_info['email']} | 📱 {user_info['phone']}")
@@ -142,7 +131,7 @@ async def main_page():
 
 
 # -------------------------
-# Add Recipe Page
+# Recipe Pages
 # -------------------------
 @ui.page("/add_recipe")
 async def add_recipe_page():
@@ -164,9 +153,6 @@ async def add_recipe_page():
         ui.button("SAVE", on_click=save).classes("mt-2 bg-green-500 text-white")
 
 
-# -------------------------
-# Show Recipes Page
-# -------------------------
 @ui.page("/show_recipes")
 async def show_recipes_page():
     payload = await require_login()
@@ -190,12 +176,9 @@ async def show_recipes_page():
                     ui.button("Edit", on_click=lambda r=r: ui.navigate.to(f"/edit_recipe/{r['title']}")).classes("bg-blue-500 text-white mr-2")
                     ui.button("Delete", on_click=lambda r=r: delete_recipe(r)).classes("bg-red-500 text-white")
 
-    ui.button("Dashboard", on_click=lambda: ui.navigate.to("/")).classes("bg-gray-500 text-white mt-4")
+    ui.button("Dashboard", on_click=lambda: ui.navigate.to("/")).classes("bg-red-500 text-white")
 
 
-# -------------------------
-# Edit Recipe Page
-# -------------------------
 @ui.page("/edit_recipe/{title}")
 async def edit_recipe(title: str):
     payload = await require_login()
@@ -239,7 +222,7 @@ async def superuser_page():
             with ui.card().classes("w-full mb-2 p-3"):
                 ui.label(f"{u['username']} ({u['role']}) - {u['email']} | {u['phone']}")
 
-                if u.get("approved") != 1:
+                if not u.get("approved"):
                     async def approve_user_action(uname=u["username"]):
                         backend.approve_user(uname)
                         ui.notify(f"User {uname} approved", color="green")
@@ -275,6 +258,6 @@ async def superuser_page():
 
 
 # -------------------------
-# Run App
+# Run app
 # -------------------------
 ui.run(title="Recipe Manager (SQLite + JWT)", port=8080, reload=False, storage_secret="super_secret_session_key_123")
