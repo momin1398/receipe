@@ -1,0 +1,4 @@
+nicegui
+pyjwt
+bcrypt
+tinydb
