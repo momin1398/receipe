@@ -330,6 +330,7 @@ def calculate_page():
         ui.button("Calculate", on_click=calculate).classes("w-full mt-2 bg-blue-500 text-white")
         ui.button("Back to Dashboard", on_click=lambda: ui.navigate.to("/")).classes("w-full mt-2 bg-gray-500 text-white")
 
+
 # -------------------------
 # Run app
 # -------------------------
