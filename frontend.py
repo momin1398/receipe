@@ -162,24 +162,49 @@ async def show_recipes_page():
         return
     username = payload["username"]
 
-    with ui.card().classes("w-full max-w-2xl mx-auto mt-10 p-6 shadow-lg"):
-        ui.label("Your Recipes").classes("text-xl font-bold mb-4")
-        for r in backend.get_recipes(username):
-            with ui.card().classes("w-full mb-2 p-3"):
-                ui.label(r["title"]).classes("font-bold")
-                ui.label(r["content"]).classes("whitespace-pre-line")
+    recipes = backend.get_recipes(username)
 
-                def delete_recipe(r=r):
-                    backend.delete_recipe(username, r["title"])
-                    ui.notify("Recipe deleted!", color="red")
-                    ui.navigate.to("/show_recipes")
+    def refresh_table():
+        ui.navigate.to("/show_recipes")  # Simple way to refresh page
 
-                with ui.row():
-                    ui.button("Edit", on_click=lambda r=r: ui.navigate.to(f"/edit_recipe/{r['title']}")).classes("bg-blue-500 text-white mr-2")
-                    ui.button("Delete", on_click=lambda r=r: delete_recipe(r)).classes("bg-red-500 text-white")
+    with ui.card().classes("w-full max-w-3xl mx-auto mt-10 p-6 shadow-lg"):
+        ui.label("Your Recipes").classes("text-2xl font-bold mb-4")
 
-    ui.button("Dashboard", on_click=lambda: ui.navigate.to("/")).classes("bg-red-500 text-white")
+        if not recipes:
+            ui.label("No recipes yet. Add some!").classes("text-gray-500")
+        else:
+            # Table header
+            with ui.row().classes("font-bold border-b pb-2 mb-2"):
+                ui.label("Title").style("flex: 2")
+                ui.label("Content").style("flex: 4")
+                ui.label("Type").style("flex: 1")
+                ui.label("Actions").style("flex: 2")
 
+            # Table rows
+            for r in recipes:
+                with ui.row().classes("mb-2 items-center"):
+                    ui.label(r["title"]).style("flex: 2; word-break: break-word")
+                    ui.label(r["content"]).style("flex: 4; word-break: break-word; white-space: pre-wrap")
+                    ui.label(r["type"]).style("flex: 1")
+
+                    with ui.row().style("flex: 2"):
+                        ui.button("Edit", on_click=lambda r=r: ui.navigate.to(f"/edit_recipe/{r['title']}")).classes("bg-blue-500 text-white mr-2")
+                        
+                        def delete_recipe_confirm(r=r):
+                            with ui.dialog() as dialog, ui.card():
+                                ui.label(f"Are you sure you want to delete '{r['title']}'?").classes("mb-2")
+                                def confirm_delete():
+                                    backend.delete_recipe(username, r["title"])
+                                    ui.notify(f"'{r['title']}' deleted!", color="red")
+                                    dialog.close()
+                                    refresh_table()
+                                ui.button("DELETE", on_click=confirm_delete).classes("bg-red-500 text-white mt-2 mr-2")
+                                ui.button("CANCEL", on_click=lambda: dialog.close()).classes("bg-gray-500 text-white mt-2")
+                            dialog.open()
+
+                        ui.button("Delete", on_click=delete_recipe_confirm).classes("bg-red-500 text-white")
+
+    ui.button("Back to Dashboard", on_click=lambda: ui.navigate.to("/")).classes("mt-4 bg-gray-500 text-white")
 
 @ui.page("/edit_recipe/{title}")
 async def edit_recipe(title: str):
