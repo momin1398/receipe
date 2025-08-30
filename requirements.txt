@@ -1,4 +1,3 @@
 nicegui
 bcrypt
 pyjwt
-sqlite3  # standard lib, no need to install
