@@ -3,7 +3,6 @@ import psycopg2
 import bcrypt
 import jwt
 from datetime import datetime, timedelta
-import requests
 
 # ------------------------- Environment -------------------------
 DATABASE_URL = os.getenv(
@@ -13,9 +12,7 @@ DATABASE_URL = os.getenv(
 JWT_SECRET = os.getenv("JWT_SECRET", "super_secret_jwt_key_123")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRATION_MINUTES = int(os.getenv("JWT_EXPIRATION_MINUTES", 60))
-SUPERUSER_PASSWORD = os.getenv("SUPERUSER_PASSWORD", "admin123")
-HF_API_TOKEN = os.getenv("HF_API_TOKEN", "YOUR_HF_TOKEN_HERE")
-HF_MODEL = "google/flan-t5-large"
+SUPERUSER_PASSWORD = os.getenv("pas", "admin123")
 
 # ------------------------- Database Connection -------------------------
 try:
@@ -148,23 +145,6 @@ def update_recipe(username, old_title, new_title, new_content):
     cursor.execute("UPDATE recipes SET title=%s, content=%s WHERE username=%s AND title=%s",
                    (new_title,new_content,username,old_title))
     conn.commit()
-
-# ------------------------- AI Recipe Generation -------------------------
-def generate_ai_recipe(title, ingredients):
-    if not HF_API_TOKEN: return "AI token not set"
-    prompt = f"Create a detailed recipe for {title} using these ingredients: {ingredients}"
-    headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
-    payload = {"inputs": prompt, "parameters": {"max_new_tokens":300}}
-    try:
-        response = requests.post(f"https://api-inference.huggingface.co/models/{HF_MODEL}",
-                                 headers=headers,json=payload,timeout=30)
-        if response.status_code==200:
-            result = response.json()
-            return result[0].get("generated_text","Failed to generate recipe")
-        else:
-            return f"Failed to generate recipe ({response.status_code})"
-    except Exception as e:
-        return f"Error generating recipe: {e}"
 
 # Ensure superuser exists
 create_superuser()
