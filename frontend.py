@@ -181,7 +181,7 @@ async def show_recipes_page():
             ui.label("No recipes yet. Add some!").classes("text-gray-500 text-lg")
         else:
             for r in recipes:
-                with ui.card().classes("w-full mb-4 p-4 shadow-sm"):
+                with ui.card().classes("w-full mb-2 p-3"):
                     ui.label(r["title"]).classes("text-xl font-bold mb-2")
                     ui.markdown(r["content"]).classes("mb-2 whitespace-pre-wrap text-base")
 
