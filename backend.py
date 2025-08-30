@@ -2,16 +2,18 @@ import sqlite3
 import bcrypt
 import jwt
 from datetime import datetime, timedelta
+import os
 
 # -------------------------
-# DB Setup
+# DB & JWT Setup
 # -------------------------
-DB_FILE = "app.db"
-JWT_SECRET = "super_secret_jwt_key_123"
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_MINUTES = 60
+DB_FILE = os.getenv("DB_FILE", "app.db")
+JWT_SECRET = os.getenv("JWT_SECRET", "super_secret_jwt_key_123")
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+pas = os.getenv("pas", "")
+JWT_EXPIRATION_MINUTES = int(os.getenv("JWT_EXPIRATION_MINUTES", 60))
 
-# Connect to DB and create tables if not exist
+# Connect to DB and create tables if they don't exist
 conn = sqlite3.connect(DB_FILE, check_same_thread=False)
 cursor = conn.cursor()
 
@@ -46,7 +48,7 @@ conn.commit()
 def create_superuser():
     cursor.execute("SELECT * FROM users WHERE username = ?", ("admin",))
     if not cursor.fetchone():
-        hashed_pw = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt())  # store bytes
+        hashed_pw = bcrypt.hashpw(pas.encode(), bcrypt.gensalt()).decode()
         cursor.execute("""
         INSERT INTO users (username, password, name, email, phone, role, approved)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -57,8 +59,7 @@ def register_user(username, password, name, email, phone):
     cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
     if cursor.fetchone():
         return False
-
-    hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt())  # store bytes
+    hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     cursor.execute("""
     INSERT INTO users (username, password, name, email, phone, role, approved)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -69,16 +70,10 @@ def register_user(username, password, name, email, phone):
 def login_user(username, password):
     cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
     user = cursor.fetchone()
-    if not user or user[6] == 0:  # approved column
+    if not user or user[6] == 0:  # not approved
         return None
-
-    stored_hash = user[1]  # already bytes
-    if isinstance(stored_hash, str):  # SQLite might return str
-        stored_hash = stored_hash.encode('utf-8')
-
-    if not bcrypt.checkpw(password.encode(), stored_hash):
+    if not bcrypt.checkpw(password.encode(), user[1].encode()):
         return None
-
     payload = {
         "username": username,
         "role": user[5],
@@ -126,9 +121,7 @@ def delete_user(username):
     return True
 
 def change_password(username, new_password):
-    if username == "admin":
-        return False
-    hashed_pw = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt())  # store bytes
+    hashed_pw = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
     cursor.execute("UPDATE users SET password = ? WHERE username = ?", (hashed_pw, username))
     conn.commit()
     return True
