@@ -3,166 +3,168 @@ import psycopg2
 import bcrypt
 import jwt
 from datetime import datetime, timedelta
+import requests
 
-# -------------------------
-# Config
-# -------------------------
-DB_URL = os.getenv("DATABASE_URL")  # Your Aiven PostgreSQL URL
+# ------------------------- Environment -------------------------
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgres://avnadmin:MyPass123@pg-xxxx.aivencloud.com:28853/defaultdb?sslmode=require"
+)
 JWT_SECRET = os.getenv("JWT_SECRET", "super_secret_jwt_key_123")
-JWT_ALGORITHM = "HS256"
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRATION_MINUTES = int(os.getenv("JWT_EXPIRATION_MINUTES", 60))
-SUPERUSER_PASSWORD = os.getenv("PAS", "admin123")
+SUPERUSER_PASSWORD = os.getenv("SUPERUSER_PASSWORD", "admin123")
+HF_API_TOKEN = os.getenv("HF_API_TOKEN", "YOUR_HF_TOKEN_HERE")
+HF_MODEL = "google/flan-t5-large"
 
-# -------------------------
-# Connect to PostgreSQL
-# -------------------------
-conn = psycopg2.connect(DB_URL, sslmode='require')
-cursor = conn.cursor()
+# ------------------------- Database Connection -------------------------
+try:
+    conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+    cursor = conn.cursor()
+except Exception as e:
+    print("Database connection failed:", e)
+    cursor = None
 
-# -------------------------
-# Create Tables
-# -------------------------
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    username TEXT PRIMARY KEY,
-    password TEXT NOT NULL,
-    name TEXT,
-    email TEXT,
-    phone TEXT,
-    role TEXT,
-    approved INTEGER
-)
-""")
+# ------------------------- Tables Setup -------------------------
+if cursor:
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        username TEXT PRIMARY KEY,
+        password TEXT NOT NULL,
+        name TEXT,
+        email TEXT,
+        phone TEXT,
+        role TEXT,
+        approved INTEGER
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS recipes (
+        id SERIAL PRIMARY KEY,
+        username TEXT,
+        title TEXT,
+        content TEXT,
+        type TEXT,
+        FOREIGN KEY(username) REFERENCES users(username)
+    )
+    """)
+    conn.commit()
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS recipes (
-    id SERIAL PRIMARY KEY,
-    username TEXT,
-    title TEXT,
-    content TEXT,
-    FOREIGN KEY(username) REFERENCES users(username)
-)
-""")
-conn.commit()
-
-# -------------------------
-# User Functions
-# -------------------------
+# ------------------------- User Functions -------------------------
 def create_superuser():
+    if not cursor: return
     cursor.execute("SELECT * FROM users WHERE username = %s", ("admin",))
     if not cursor.fetchone():
         hashed_pw = bcrypt.hashpw(SUPERUSER_PASSWORD.encode(), bcrypt.gensalt()).decode()
         cursor.execute("""
         INSERT INTO users (username, password, name, email, phone, role, approved)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s,%s,%s,%s,%s,%s,%s)
         """, ("admin", hashed_pw, "Super Admin", "admin@example.com", "0000000000", "superuser", 1))
         conn.commit()
 
 def register_user(username, password, name, email, phone):
-    cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
-    if cursor.fetchone():
-        return False
+    if not cursor: return False
+    cursor.execute("SELECT * FROM users WHERE username=%s", (username,))
+    if cursor.fetchone(): return False
     hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     cursor.execute("""
-    INSERT INTO users (username, password, name, email, phone, role, approved)
-    VALUES (%s, %s, %s, %s, %s, %s, %s)
+    INSERT INTO users (username,password,name,email,phone,role,approved)
+    VALUES (%s,%s,%s,%s,%s,%s,%s)
     """, (username, hashed_pw, name, email, phone, "user", 0))
     conn.commit()
     return True
 
 def login_user(username, password):
-    cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+    if not cursor: return None
+    cursor.execute("SELECT * FROM users WHERE username=%s", (username,))
     user = cursor.fetchone()
-    if not user:
-        return None
-
-    approved = int(user[6])
-    if approved != 1:
-        return None
-
-    if not bcrypt.checkpw(password.encode(), user[1].encode()):
-        return None
-
+    if not user: return None
+    if int(user[6]) != 1: return None
+    if not bcrypt.checkpw(password.encode(), user[1].encode()): return None
     payload = {
         "username": username,
         "role": user[5],
-        "exp": datetime.utcnow() + timedelta(minutes=JWT_EXPIRATION_MINUTES),
+        "exp": datetime.utcnow() + timedelta(minutes=JWT_EXPIRATION_MINUTES)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 def get_user(username):
-    cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+    if not cursor: return None
+    cursor.execute("SELECT * FROM users WHERE username=%s", (username,))
     user = cursor.fetchone()
-    if user:
-        return {
-            "username": user[0],
-            "name": user[2],
-            "email": user[3],
-            "phone": user[4],
-            "role": user[5],
-            "approved": user[6]
-        }
-    return None
+    if not user: return None
+    return {
+        "username": user[0],
+        "name": user[2],
+        "email": user[3],
+        "phone": user[4],
+        "role": user[5],
+        "approved": user[6]
+    }
 
 def get_all_users():
+    if not cursor: return []
     cursor.execute("SELECT * FROM users")
     users = cursor.fetchall()
-    return [
-        {
-            "username": u[0],
-            "name": u[2],
-            "email": u[3],
-            "phone": u[4],
-            "role": u[5],
-            "approved": u[6]
-        } for u in users
-    ]
+    return [{"username": u[0],"name": u[2],"email": u[3],"phone": u[4],"role": u[5],"approved": u[6]} for u in users]
 
 def approve_user(username):
-    cursor.execute("UPDATE users SET approved = 1 WHERE username = %s", (username,))
+    if not cursor: return
+    cursor.execute("UPDATE users SET approved=1 WHERE username=%s", (username,))
     conn.commit()
 
 def delete_user(username):
-    if username == "admin":
-        return False
-    cursor.execute("DELETE FROM users WHERE username = %s", (username,))
+    if not cursor or username=="admin": return False
+    cursor.execute("DELETE FROM users WHERE username=%s", (username,))
     conn.commit()
     return True
 
 def change_password(username, new_password):
+    if not cursor: return False
     hashed_pw = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
-    cursor.execute("UPDATE users SET password = %s WHERE username = %s", (hashed_pw, username))
+    cursor.execute("UPDATE users SET password=%s WHERE username=%s", (hashed_pw, username))
     conn.commit()
     return True
 
-# -------------------------
-# Recipe Functions
-# -------------------------
-def add_recipe(username, title, content):
-    cursor.execute("""
-    INSERT INTO recipes (username, title, content)
-    VALUES (%s, %s, %s)
-    """, (username, title, content))
+# ------------------------- Recipe Functions -------------------------
+def add_recipe(username, title, content, type="manual"):
+    if not cursor: return
+    cursor.execute("INSERT INTO recipes (username,title,content,type) VALUES (%s,%s,%s,%s)",
+                   (username,title,content,type))
     conn.commit()
 
 def get_recipes(username):
-    cursor.execute("SELECT * FROM recipes WHERE username = %s", (username,))
-    recipes = cursor.fetchall()
-    return [{"id": r[0], "username": r[1], "title": r[2], "content": r[3]} for r in recipes]
+    if not cursor: return []
+    cursor.execute("SELECT id,username,title,content,type FROM recipes WHERE username=%s", (username,))
+    return [{"id": r[0],"username":r[1],"title":r[2],"content":r[3],"type":r[4]} for r in cursor.fetchall()]
 
-def delete_recipe(username, title):
-    cursor.execute("DELETE FROM recipes WHERE username = %s AND title = %s", (username, title))
+def delete_recipe(username,title):
+    if not cursor: return
+    cursor.execute("DELETE FROM recipes WHERE username=%s AND title=%s", (username,title))
     conn.commit()
 
 def update_recipe(username, old_title, new_title, new_content):
-    cursor.execute("""
-    UPDATE recipes
-    SET title = %s, content = %s
-    WHERE username = %s AND title = %s
-    """, (new_title, new_content, username, old_title))
+    if not cursor: return
+    cursor.execute("UPDATE recipes SET title=%s, content=%s WHERE username=%s AND title=%s",
+                   (new_title,new_content,username,old_title))
     conn.commit()
 
-# -------------------------
+# ------------------------- AI Recipe Generation -------------------------
+def generate_ai_recipe(title, ingredients):
+    if not HF_API_TOKEN: return "AI token not set"
+    prompt = f"Create a detailed recipe for {title} using these ingredients: {ingredients}"
+    headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
+    payload = {"inputs": prompt, "parameters": {"max_new_tokens":300}}
+    try:
+        response = requests.post(f"https://api-inference.huggingface.co/models/{HF_MODEL}",
+                                 headers=headers,json=payload,timeout=30)
+        if response.status_code==200:
+            result = response.json()
+            return result[0].get("generated_text","Failed to generate recipe")
+        else:
+            return f"Failed to generate recipe ({response.status_code})"
+    except Exception as e:
+        return f"Error generating recipe: {e}"
+
 # Ensure superuser exists
-# -------------------------
 create_superuser()
