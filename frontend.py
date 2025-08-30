@@ -126,7 +126,6 @@ async def main_page():
         async def logout():
             await clear_jwt()
             ui.navigate.to("/login")
-
         ui.button("Logout", on_click=logout).classes("bg-red-500 text-white")
 
 

@@ -7,17 +7,28 @@ import os
 # -------------------------
 # DB & JWT Setup
 # -------------------------
-DB_FILE = os.getenv("DB_FILE", "/mnt/data/app.db")  # persistent storage on Render
+
+# Determine environment path
+if os.name == "nt":  # Windows local
+    DB_FOLDER = os.path.join(os.getcwd(), "data")
+else:  # Linux/Render
+    DB_FOLDER = "/opt/render/project/data"
+
+os.makedirs(DB_FOLDER, exist_ok=True)
+
+DB_FILE = os.getenv("DB_FILE", os.path.join(DB_FOLDER, "app.db"))
 JWT_SECRET = os.getenv("JWT_SECRET", "super_secret_jwt_key_123")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-pas = os.getenv("pas", "admin123")
+SUPERUSER_PASSWORD = os.getenv("PAS", "admin123")
 JWT_EXPIRATION_MINUTES = int(os.getenv("JWT_EXPIRATION_MINUTES", 60))
 
-# Connect to DB and create tables if they don't exist
+# Connect to DB
 conn = sqlite3.connect(DB_FILE, check_same_thread=False)
 cursor = conn.cursor()
 
-# Users table
+# -------------------------
+# Create Tables
+# -------------------------
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     username TEXT PRIMARY KEY,
@@ -30,7 +41,6 @@ CREATE TABLE IF NOT EXISTS users (
 )
 """)
 
-# Recipes table
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS recipes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,7 +58,7 @@ conn.commit()
 def create_superuser():
     cursor.execute("SELECT * FROM users WHERE username = ?", ("admin",))
     if not cursor.fetchone():
-        hashed_pw = bcrypt.hashpw(pas.encode(), bcrypt.gensalt()).decode()
+        hashed_pw = bcrypt.hashpw(SUPERUSER_PASSWORD.encode(), bcrypt.gensalt()).decode()
         cursor.execute("""
         INSERT INTO users (username, password, name, email, phone, role, approved)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -73,7 +83,7 @@ def login_user(username, password):
     if not user:
         return None
 
-    approved = int(user[6])  # ensure integer
+    approved = int(user[6])
     if approved != 1:
         return None
 
