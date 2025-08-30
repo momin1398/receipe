@@ -146,7 +146,7 @@ async def show_recipes_page():
         for r in backend.get_recipes(username):
             with ui.card().classes("w-full mb-2 p-3"):
                 ui.label(r["title"]).classes("font-bold")
-                ui.label(r["content"])
+                ui.label(r["content"]).classes("whitespace-pre-line")
 
                 def delete_recipe(r=r):
                     backend.delete_recipe(username, r["title"])
