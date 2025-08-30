@@ -34,7 +34,7 @@ async def require_login() -> dict:
         return None
     return payload
 
-# ------------------------- Login Page -------------------------
+# ------------------------- Pages -------------------------
 @ui.page("/login")
 def login_page():
     with ui.card().classes("w-96 mx-auto mt-20 p-6 shadow-lg"):
@@ -46,8 +46,8 @@ def login_page():
             token = backend.login_user(username.value, password.value)
             if token:
                 await set_jwt(token)
-                payload = decode_jwt(token)
-                ui.navigate.to("/superuser" if payload["role"]=="superuser" else "/")
+                payload = decode_jwt(token) or {}
+                ui.navigate.to("/superuser" if payload.get("role")=="superuser" else "/")
             else:
                 ui.notify("Invalid credentials or not approved yet", color="red")
 
@@ -55,7 +55,6 @@ def login_page():
         ui.button("REGISTER", on_click=lambda: ui.navigate.to("/register")).classes("w-full mt-2 bg-green-500 text-white")
         ui.button("Change Password", on_click=lambda: ui.navigate.to("/reset_password")).classes("w-full mt-2 bg-yellow-500 text-white")
 
-# ------------------------- Register Page -------------------------
 @ui.page("/register")
 def register_page():
     with ui.card().classes("w-96 mx-auto mt-20 p-6 shadow-lg"):
@@ -79,7 +78,6 @@ def register_page():
         ui.button("REGISTER", on_click=do_register).classes("w-full mt-4 bg-green-500 text-white")
         ui.button("BACK TO LOGIN", on_click=lambda: ui.navigate.to("/login")).classes("w-full mt-2 bg-gray-500 text-white")
 
-# ------------------------- Reset Password Page -------------------------
 @ui.page("/reset_password")
 def reset_password_page():
     with ui.card().classes("w-96 mx-auto mt-20 p-6 shadow-lg"):
@@ -100,45 +98,52 @@ def reset_password_page():
         ui.button("CHANGE PASSWORD", on_click=change).classes("w-full mt-4 bg-blue-500 text-white")
         ui.button("BACK TO LOGIN", on_click=lambda: ui.navigate.to("/login")).classes("w-full mt-2 bg-gray-500 text-white")
 
-# ------------------------- Main Dashboard -------------------------
 @ui.page("/")
 async def main_page():
     payload = await require_login()
-    if not payload: return
-    username = payload["username"]
-    user_info = backend.get_user(username)
+    if not payload:
+        return
+
+    username = payload.get("username")
+    if not username:
+        ui.notify("Invalid session", color="red")
+        await clear_jwt()
+        ui.navigate.to("/login")
+        return
+
+    user_info = backend.get_user(username) or {}
 
     with ui.card().classes("w-full max-w-2xl mx-auto mt-10 p-6 shadow-lg"):
-        ui.label(f"👋 Welcome, {user_info['name']}!").classes("text-2xl font-bold mb-2")
-        ui.label(f"📧 {user_info['email']} | 📱 {user_info['phone']}")
+        ui.label(f"👋 Welcome, {user_info.get('name', 'User')}!").classes("text-2xl font-bold mb-2")
+        ui.label(f"📧 {user_info.get('email','')} | 📱 {user_info.get('phone','')}")
 
     with ui.row().classes("mx-auto mt-6"):
         ui.button("Show Recipes", on_click=lambda: ui.navigate.to("/show_recipes")).classes("bg-blue-500 text-white")
         ui.button("Add Recipe", on_click=lambda: ui.navigate.to("/add_recipe")).classes("bg-green-500 text-white")
-        ui.button("Estimation", on_click=lambda: ui.navigate.to("/calculate")).classes("bg-yellow-500 text-white")
+        ui.button("Estimation ", on_click=lambda: ui.navigate.to("/calculate")).classes("bg-yellow-500 text-white")
 
         async def logout():
             await clear_jwt()
             ui.navigate.to("/login")
         ui.button("Logout", on_click=logout).classes("bg-red-500 text-white")
 
-# ------------------------- Add Recipe Page -------------------------
+# ------------------------- Recipe Pages -------------------------
 @ui.page("/add_recipe")
 async def add_recipe_page():
     payload = await require_login()
     if not payload: return
-    username = payload["username"]
+    username = payload.get("username")
+    if not username: return
 
     with ui.card().classes("w-full max-w-2xl mx-auto mt-10 p-6 shadow-lg"):
         ui.label("Add Recipe").classes("text-xl font-bold mb-4")
         title = ui.input("Title").classes("w-full")
         content = ui.textarea("Content").classes("w-full")
 
-        async def save():
+        def save():
             if title.value.strip() and content.value.strip():
                 backend.add_recipe(username, title.value, content.value)
                 ui.notify("Recipe added!", color="green")
-                await asyncio.sleep(0.1)  # allow DB commit
                 ui.navigate.to("/show_recipes")
             else:
                 ui.notify("Title and content cannot be empty!", color="red")
@@ -146,14 +151,14 @@ async def add_recipe_page():
         ui.button("SAVE", on_click=save).classes("mt-2 bg-green-500 text-white")
         ui.button("Back to Dashboard", on_click=lambda: ui.navigate.to("/")).classes("mt-2 bg-gray-500 text-white")
 
-# ------------------------- Show Recipes Page -------------------------
 @ui.page("/show_recipes")
 async def show_recipes_page():
     payload = await require_login()
     if not payload: return
-    username = payload["username"]
+    username = payload.get("username")
+    if not username: return
 
-    recipes = backend.get_recipes(username)
+    recipes = backend.get_recipes(username) or []
 
     with ui.card().classes("w-full max-w-2xl mx-auto mt-10 p-6 shadow-lg"):
         ui.label("Your Recipes").classes("text-xl font-bold mb-4")
@@ -161,40 +166,40 @@ async def show_recipes_page():
             ui.label("No recipes yet. Add some!").classes("italic")
         for r in recipes:
             with ui.card().classes("w-full mb-2 p-3"):
-                ui.label(r["title"]).classes("font-bold")
-                ui.label(r["content"]).classes("whitespace-pre-line")
+                ui.label(r.get("title","")).classes("font-bold")
+                ui.label(r.get("content","")).classes("whitespace-pre-line")
 
-                def delete_recipe_action(r=r):
-                    backend.delete_recipe(username, r["title"])
+                def delete_recipe(r=r):
+                    backend.delete_recipe(username, r.get("title",""))
                     ui.notify("Recipe deleted!", color="red")
-                    ui.navigate.refresh()  # refresh to reflect changes
+                    ui.navigate.to("/show_recipes")
 
                 with ui.row():
-                    ui.button("Edit", on_click=lambda r=r: ui.navigate.to(f"/edit_recipe/{r['title']}")).classes("bg-blue-500 text-white mr-2")
-                    ui.button("Delete", on_click=lambda r=r: delete_recipe_action(r)).classes("bg-red-500 text-white")
+                    ui.button("Edit", on_click=lambda r=r: ui.navigate.to(f"/edit_recipe/{r.get('title','')}")).classes("bg-blue-500 text-white mr-2")
+                    ui.button("Delete", on_click=lambda r=r: delete_recipe(r)).classes("bg-red-500 text-white")
 
     ui.button("Dashboard", on_click=lambda: ui.navigate.to("/")).classes("bg-gray-500 text-white mt-2")
 
-# ------------------------- Edit Recipe Page -------------------------
 @ui.page("/edit_recipe/{title}")
 async def edit_recipe(title: str):
     payload = await require_login()
     if not payload: return
-    username = payload["username"]
-    recipe = next((r for r in backend.get_recipes(username) if r["title"] == title), None)
+    username = payload.get("username")
+    if not username: return
+
+    recipe = next((r for r in backend.get_recipes(username) or [] if r.get("title") == title), None)
     if not recipe:
         ui.label("Recipe not found").classes("text-red-500")
         return
 
     with ui.card().classes("w-96 mx-auto mt-20 p-6 shadow-lg"):
-        new_title = ui.input("Title", value=recipe["title"]).classes("w-full")
-        new_content = ui.textarea("Content", value=recipe["content"]).classes("w-full")
+        new_title = ui.input("Title", value=recipe.get("title","")).classes("w-full")
+        new_content = ui.textarea("Content", value=recipe.get("content","")).classes("w-full")
 
-        async def update():
+        def update():
             if new_title.value.strip() and new_content.value.strip():
                 backend.update_recipe(username, title, new_title.value, new_content.value)
                 ui.notify("Recipe updated!", color="green")
-                await asyncio.sleep(0.1)
                 ui.navigate.to("/show_recipes")
             else:
                 ui.notify("Title and content cannot be empty!", color="red")
@@ -202,31 +207,30 @@ async def edit_recipe(title: str):
         ui.button("Update", on_click=update).classes("w-full bg-blue-500 text-white mt-4")
         ui.button("Back", on_click=lambda: ui.navigate.to("/show_recipes")).classes("w-full bg-gray-500 text-white mt-2")
 
-# ------------------------- Superuser Page -------------------------
+# ------------------------- Superuser Dashboard -------------------------
 @ui.page("/superuser")
 async def superuser_page():
     payload = await require_login()
-    if not payload or payload["role"] != "superuser":
+    if not payload or payload.get("role") != "superuser":
         ui.notify("Access denied", color="red")
         ui.navigate.to("/login")
         return
 
-    users = backend.get_all_users()
-
     with ui.card().classes("w-full max-w-3xl mx-auto mt-10 p-6 shadow-lg"):
         ui.label("Superuser Dashboard").classes("text-2xl font-bold mb-4")
+        users = backend.get_all_users() or []
         for u in users:
             with ui.card().classes("w-full mb-2 p-3"):
-                ui.label(f"{u['username']} ({u['role']}) - {u['email']} | {u['phone']}")
+                ui.label(f"{u.get('username','')} ({u.get('role','')}) - {u.get('email','')} | {u.get('phone','')}")
                 if not u.get("approved"):
-                    async def approve_user_action(uname=u["username"]):
+                    async def approve_user_action(uname=u.get("username")):
                         backend.approve_user(uname)
                         ui.notify(f"User {uname} approved", color="green")
-                        ui.navigate.refresh()
+                        ui.navigate.to("/superuser")
                     ui.button("Approve", on_click=approve_user_action).classes("bg-green-500 text-white")
-                if u["username"] != "admin":
+                if u.get("username") != "admin":
                     with ui.row():
-                        def change_password_popup(uname=u["username"]):
+                        def change_password_popup(uname=u.get("username")):
                             with ui.dialog() as dialog, ui.card():
                                 ui.label(f"Set new password for {uname}").classes("mb-2")
                                 pwd_input = ui.input("New Password", password=True, password_toggle_button=True).classes("w-full")
@@ -239,10 +243,10 @@ async def superuser_page():
                             dialog.open()
                         ui.button("Change Password", on_click=change_password_popup).classes("bg-yellow-500 text-white")
 
-                        async def delete_user_action(uname=u["username"]):
+                        async def delete_user_action(uname=u.get("username")):
                             backend.delete_user(uname)
                             ui.notify(f"User {uname} deleted", color="red")
-                            ui.navigate.refresh()
+                            ui.navigate.to("/superuser")
                         ui.button("Delete", on_click=delete_user_action).classes("bg-red-500 text-white")
 
     async def logout():
@@ -251,5 +255,5 @@ async def superuser_page():
 
     ui.button("Logout", on_click=logout).classes("bg-red-500 text-white mt-2")
 
-# ------------------------- Run the app -------------------------
+# ------------------------- Run -------------------------
 ui.run(title="Recipe Manager (PostgreSQL + JWT)", port=8080, reload=False, storage_secret="super_secret_session_key_123")

@@ -60,7 +60,7 @@ def execute_commit(query, params=None):
         conn.commit()
         return True
     except Exception as e:
-        print("DB Error:", e)
+        print("DB Error (commit):", e)
         conn.rollback()
         return False
 
@@ -69,9 +69,9 @@ def execute_fetch(query, params=None):
     if not cursor: return []
     try:
         cursor.execute(query, params or ())
-        return cursor.fetchall()
+        return cursor.fetchall() or []
     except Exception as e:
-        print("DB Error:", e)
+        print("DB Error (fetch):", e)
         conn.rollback()
         return []
 
@@ -128,7 +128,7 @@ def get_all_users():
     return [{"username": u[0], "name": u[2], "email": u[3], "phone": u[4], "role": u[5], "approved": u[6]} for u in rows]
 
 def approve_user(username):
-    execute_commit("UPDATE users SET approved=1 WHERE username=%s", (username,))
+    return execute_commit("UPDATE users SET approved=1 WHERE username=%s", (username,))
 
 def delete_user(username):
     if username == "admin": return False
@@ -140,19 +140,39 @@ def change_password(username, new_password):
 
 # ------------------------- Recipe Functions -------------------------
 def add_recipe(username, title, content, type="manual"):
-    return execute_commit("INSERT INTO recipes (username,title,content,type) VALUES (%s,%s,%s,%s)",
-                 (username,title,content,type))
+    if not cursor or not username: return False
+    try:
+        cursor.execute(
+            "INSERT INTO recipes (username, title, content, type) VALUES (%s,%s,%s,%s)",
+            (username, title, content, type)
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        print("DB Error in add_recipe:", e)
+        conn.rollback()
+        return False
 
 def get_recipes(username):
-    rows = execute_fetch("SELECT id,username,title,content,type FROM recipes WHERE username=%s", (username,))
-    return [{"id": r[0],"username":r[1],"title":r[2],"content":r[3],"type":r[4]} for r in rows]
+    """Return all recipes for a user."""
+    if not cursor or not username: return []
+    try:
+        cursor.execute("SELECT id, username, title, content, type FROM recipes WHERE username=%s", (username,))
+        rows = cursor.fetchall() or []
+        return [{"id": r[0], "username": r[1], "title": r[2], "content": r[3], "type": r[4]} for r in rows]
+    except Exception as e:
+        print("DB Error in get_recipes:", e)
+        conn.rollback()
+        return []
 
-def delete_recipe(username,title):
-    return execute_commit("DELETE FROM recipes WHERE username=%s AND title=%s", (username,title))
+def delete_recipe(username, title):
+    return execute_commit("DELETE FROM recipes WHERE username=%s AND title=%s", (username, title))
 
 def update_recipe(username, old_title, new_title, new_content):
-    return execute_commit("UPDATE recipes SET title=%s, content=%s WHERE username=%s AND title=%s",
-                 (new_title,new_content,username,old_title))
+    return execute_commit(
+        "UPDATE recipes SET title=%s, content=%s WHERE username=%s AND title=%s",
+        (new_title, new_content, username, old_title)
+    )
 
 # ------------------------- Ensure superuser exists -------------------------
 create_superuser()
