@@ -48,7 +48,6 @@ if cursor:
 
 # ------------------------- Transaction-safe Helpers -------------------------
 def safe_execute(query, params=None):
-    """Executes a query safely with rollback on failure."""
     if not cursor:
         return None
     try:
@@ -132,54 +131,18 @@ def change_password(username, new_password):
 
 # ------------------------- Recipe Functions -------------------------
 def add_recipe(username, title, content):
-    """Add a recipe for a user. Returns True if success, False otherwise."""
-    if not cursor:
-        print("DB cursor not available")
-        return False
-
-    # Ensure the user exists
-    cur = safe_execute("SELECT username FROM users WHERE username=%s", (username,))
-    user = cur.fetchone() if cur else None
-    if not user:
-        print(f"User {username} does not exist. Cannot add recipe.")
-        return False
-
-    try:
-        cursor.execute(
-            "INSERT INTO recipes (username,title,content) VALUES (%s,%s,%s,%s)",
-            (username, title, content)
-        )
-        conn.commit()
-        print(f"Recipe '{title}' added successfully for {username}")
-        return True
-    except Exception as e:
-        print("Failed to add recipe:", e)
-        conn.rollback()
-        return False
-
+    if not cursor: return False
+    cur = safe_execute(
+        "INSERT INTO recipes (username,title,content) VALUES (%s,%s,%s)",
+        (username, title, content)
+    )
+    return bool(cur)
 
 def get_recipes(username):
-    """Return a list of recipes for a user."""
-    if not cursor:
-        print("DB cursor not available")
-        return []
-
-    try:
-        cursor.execute(
-            "SELECT id,username,title,content FROM recipes WHERE username=%s",
-            (username,)
-        )
-        rows = cursor.fetchall()
-        recipes = [
-            {"id": r[0], "username": r[1], "title": r[2], "content": r[3]}
-            for r in rows
-        ]
-        print(f"Fetched {len(recipes)} recipes for {username}")
-        return recipes
-    except Exception as e:
-        print("Failed to fetch recipes:", e)
-        return []
-
+    if not cursor: return []
+    cur = safe_execute("SELECT id,username,title,content FROM recipes WHERE username=%s", (username,))
+    rows = cur.fetchall() if cur else []
+    return [{"id": r[0], "username": r[1], "title": r[2], "content": r[3]} for r in rows]
 
 def delete_recipe(username,title):
     safe_execute("DELETE FROM recipes WHERE username=%s AND title=%s", (username,title))
