@@ -2,6 +2,3 @@ nicegui
 bcrypt
 pyjwt
 psycopg2-binary
-redis
-fastapi
-uvicorn
