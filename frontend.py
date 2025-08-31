@@ -129,10 +129,13 @@ async def main_page():
         ui.label(f"👋 Welcome, {user_info['name']}!").classes("text-2xl font-bold mb-2")
         ui.label(f"📧 {user_info['email']} | 📱 {user_info['phone']}")
 
-    with ui.row().classes("mx-auto mt-6"):
+    with ui.grid(columns=2).classes("gap-4 mx-auto mt-6"):
         ui.button("Show Recipes", on_click=lambda: ui.navigate.to("/show_recipes")).classes("bg-blue-500 text-white")
         ui.button("Add Recipe", on_click=lambda: ui.navigate.to("/add_recipe")).classes("bg-green-500 text-white")
-        ui.button("Estimation ", on_click=lambda: ui.navigate.to("/calculate")).classes("bg-yellow-500 text-white")
+        ui.button("Estimation", on_click=lambda: ui.navigate.to("/calculate")).classes("bg-yellow-500 text-white")
+        ui.button("Friend Request", on_click=lambda: ui.navigate.to("/friends")).classes("bg-purple-500 text-white")
+        ui.button("Chat Box", on_click=lambda: ui.navigate.to("/chat")).classes("bg-orange-500 text-white")
+        ui.button("Find Friend", on_click=lambda: ui.navigate.to("/search")).classes("bg-pink-500 text-white")
 
         async def logout():
             await clear_jwt()
@@ -160,6 +163,108 @@ async def add_recipe_page():
 
         ui.button("SAVE", on_click=save).classes("mt-2 bg-green-500 text-white")
         ui.button("Back to Dashboard", on_click=lambda: ui.navigate.to("/")).classes("mt-2 bg-gray-500 text-white")
+
+
+@ui.page("/friends")
+async def friends_page():
+    payload = await require_login()
+    if not payload: return
+    username = payload["username"]
+
+    with ui.card().classes("w-full max-w-2xl mx-auto mt-10 p-6 shadow-lg"):
+        ui.label("👥 Friend Requests").classes("text-2xl font-bold mb-4")
+
+        requests = backend.get_friend_requests(username)
+        if not requests:
+            ui.label("No pending requests").classes("text-gray-500")
+        else:
+            for req in requests:
+                with ui.row():
+                    ui.label(f"{req['sender']} sent you a request")
+                    def accept(req_id=req['id']):
+                        backend.respond_friend_request(req_id, "accepted")
+                        ui.notify("Friend request accepted", color="green")
+                        ui.navigate.to("/friends")
+                    def reject(req_id=req['id']):
+                        backend.respond_friend_request(req_id, "rejected")
+                        ui.notify("Friend request rejected", color="red")
+                        ui.navigate.to("/friends")
+                    ui.button("Accept", on_click=accept).classes("bg-green-500 text-white text-sm")
+                    ui.button("Reject", on_click=reject).classes("bg-red-500 text-white text-sm")
+
+        ui.button("Back to Dashboard", on_click=lambda: ui.navigate.to("/")).classes("w-full mt-4 bg-gray-500 text-white")
+
+
+import json
+import websockets
+
+@ui.page("/chat")
+async def chat_page():
+    payload = await require_login()
+    if not payload: return
+    username = payload["username"]
+
+    with ui.card().classes("w-full max-w-2xl mx-auto mt-10 p-6 shadow-lg"):
+        ui.label("💬 Chat").classes("text-2xl font-bold mb-4")
+        friend_input = ui.input("Friend username").classes("w-full mb-2")
+        message_input = ui.input("Type a message").classes("w-full mb-2")
+        chat_area = ui.column().classes("border p-3 h-64 overflow-y-auto")
+
+        async def connect_ws():
+            uri = f"ws://localhost:8000/ws/{username}"  # replace with Render URL
+            async with websockets.connect(uri) as ws:
+                async def receiver():
+                    async for msg in ws:
+                        data = json.loads(msg)
+                        with chat_area:
+                            ui.label(f"{data['from']}: {data['message']}")
+
+                asyncio.create_task(receiver())
+
+                async def send_message():
+                    await ws.send(json.dumps({"to": friend_input.value, "message": message_input.value}))
+                    with chat_area:
+                        ui.label(f"You: {message_input.value}")
+                    message_input.value = ""
+
+                ui.button("Send", on_click=lambda: asyncio.create_task(send_message())).classes("w-full bg-blue-500 text-white")
+
+        asyncio.create_task(connect_ws())
+
+
+
+
+@ui.page("/search")
+async def search_page():
+    payload = await require_login()
+    if not payload: return
+    username = payload["username"]
+
+    with ui.card().classes("w-full max-w-2xl mx-auto mt-10 p-6 shadow-lg"):
+        ui.label("🔍 Search Users").classes("text-2xl font-bold mb-4")
+        query_input = ui.input("Enter name, username, or email").classes("w-full")
+
+        results_area = ui.column().classes("mt-4 w-full")
+
+        def do_search():
+            results_area.clear()
+            results = backend.search_users(query_input.value)
+            if not results:
+                ui.label("No users found").classes("text-gray-500").parent(results_area)
+                return
+            for u in results:
+                with results_area:
+                    with ui.row():
+                        ui.label(f"{u['username']} ({u['name']}) - {u['email']}")
+                        def send_request(receiver=u['username']):
+                            if backend.send_friend_request(username, receiver):
+                                ui.notify(f"Friend request sent to {receiver}", color="green")
+                            else:
+                                ui.notify("Failed to send request", color="red")
+                        ui.button("Add Friend", on_click=send_request).classes("bg-blue-500 text-white text-sm")
+
+        ui.button("SEARCH", on_click=do_search).classes("w-full mt-2 bg-green-500 text-white")
+        ui.button("Back to Dashboard", on_click=lambda: ui.navigate.to("/")).classes("w-full mt-2 bg-gray-500 text-white")
 
 # -------------------------
 # Show Recipes Page
