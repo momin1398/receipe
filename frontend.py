@@ -293,6 +293,32 @@ def parse_quantity(q):
     except Exception:
         return None
 
+
+def scale_ingredients_by_persons(text, base_persons, target_persons):
+    scaled = []
+    lines = text.strip().splitlines()
+    factor = target_persons / base_persons
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.rsplit(' ', 2)
+        if len(parts) == 3:
+            name, qty, unit = parts
+        elif len(parts) == 2:
+            name, qty = parts
+            unit = ''
+        else:
+            continue
+
+        qty_num = parse_quantity(qty)
+        if qty_num is None:
+            continue
+        scaled_qty = qty_num * factor
+        scaled.append(f"{name} {scaled_qty:.2f} {unit}".strip())
+    return '\n'.join(scaled)
+
+
 def scale_ingredients(text, base_weight, target_weight):
     scaled = []
     lines = text.strip().splitlines()
@@ -330,30 +356,62 @@ def calculate_page():
             "Enter ingredients, one per line (e.g., Flour 500 g)"
         ).classes("w-full mb-2")
 
-        base_weight_input = ui.input("Base Weight (kg)").props('type="number"').classes("w-full mb-2")
-        target_weight_input = ui.input("Target Weight (kg)").props('type="number"').classes("w-full mb-2")
+        # Toggle option
+        scale_type = ui.radio(
+            ["By Weight", "By Persons"], value="By Weight"
+        ).classes("mb-4")
 
-        # Make textarea readonly in older NiceGUI
+        # Inputs for weight scaling (wrapped in container for hiding)
+        with ui.column().classes("w-full") as weight_inputs:
+            base_weight_input = ui.input("Base Weight (kg)").props('type="number"').classes("w-full mb-2")
+            target_weight_input = ui.input("Target Weight (kg)").props('type="number"').classes("w-full mb-2")
+
+        # Inputs for person scaling (wrapped in container for hiding)
+        with ui.column().classes("w-full") as person_inputs:
+            base_persons_input = ui.input("Base Servings (persons)").props('type="number"').classes("w-full mb-2")
+            target_persons_input = ui.input("Target Servings (persons)").props('type="number"').classes("w-full mb-2")
+
+        # Initially hide persons inputs
+        person_inputs.visible = False
+
+        # Result area
         result_area = ui.textarea("Scaled Ingredients").classes("w-full")
-        result_area._props["readonly"] = True  # set readonly dynamically
+        result_area._props["readonly"] = True
+
+        # Change visibility when radio changes
+        def on_scale_type_change(value):
+            if value == "By Weight":
+                weight_inputs.visible = True
+                person_inputs.visible = False
+            else:
+                weight_inputs.visible = False
+                person_inputs.visible = True
+
+        scale_type.on_value_change(lambda e: on_scale_type_change(e.value))
 
         def calculate():
             try:
-                base_weight = float(base_weight_input.value)
-                target_weight = float(target_weight_input.value)
+                if scale_type.value == "By Weight":
+                    base_weight = float(base_weight_input.value)
+                    target_weight = float(target_weight_input.value)
+                    result = scale_ingredients_by_weight(
+                        ingredients_input.value, base_weight, target_weight
+                    )
+                else:
+                    base_persons = float(base_persons_input.value)
+                    target_persons = float(target_persons_input.value)
+                    result = scale_ingredients_by_persons(
+                        ingredients_input.value, base_persons, target_persons
+                    )
             except (TypeError, ValueError):
-                ui.notify("Please enter valid weights ", color="red")
+                ui.notify("Please enter valid numbers", color="red")
                 return
 
-            result = scale_ingredients(
-                ingredients_input.value, base_weight, target_weight
-            )
             result_area.value = result
             ui.notify("Ingredients scaled!", color="green")
 
         ui.button("Calculate", on_click=calculate).classes("w-full mt-2 bg-blue-500 text-white")
         ui.button("Back to Dashboard", on_click=lambda: ui.navigate.to("/")).classes("w-full mt-2 bg-gray-500 text-white")
-
 
 # -------------------------
 # Run App
