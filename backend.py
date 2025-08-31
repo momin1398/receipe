@@ -236,6 +236,19 @@ def get_chat_history(user1, user2, limit=50):
         for r in rows
     ][::-1]  # reverse so oldest → newest
 
+def get_friends(username):
+    cur = safe_execute("""
+        SELECT CASE 
+                 WHEN sender = %s THEN receiver 
+                 ELSE sender 
+               END AS friend
+        FROM friend_requests
+        WHERE (sender = %s OR receiver = %s) AND status = 'accepted'
+    """, (username, username, username))
+    rows = cur.fetchall() if cur else []
+    return [r[0] for r in rows]
+
+
 
 async def send_personal_message(sender, receiver, message):
     save_message(sender, receiver, message)
