@@ -319,7 +319,7 @@ def scale_ingredients_by_persons(text, base_persons, target_persons):
     return '\n'.join(scaled)
 
 
-def scale_ingredients(text, base_weight, target_weight):
+def scale_ingredients_by_weight(text, base_weight, target_weight):
     scaled = []
     lines = text.strip().splitlines()
     factor = target_weight / base_weight
